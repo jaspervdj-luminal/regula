@@ -260,7 +260,37 @@ func (c *HclConfiguration) LoadedFiles() []string {
 	return filepaths
 }
 
-func (c *HclConfiguration) Location(attributePath []string) (*Location, error) {
+func (c *HclConfiguration) Location(path []string) (*Location, error) {
+	if len(path) < 1 {
+		return nil, nil
+	}
+	resourceId := path[0]
+	attributePath := path[1:]
+	resourceOwner := c
+	for strings.HasPrefix(resourceId, "module.") {
+		resourcePath := strings.SplitN(resourceId, ".", 3)
+		if len(resourcePath) < 3 {
+			return nil, nil
+		}
+		// Avoiding shadowing resourceOwner
+		var ok bool
+		if resourceOwner, ok = resourceOwner.children[resourcePath[1]]; !ok {
+			return nil, nil
+		}
+		resourceId = resourcePath[2]
+	}
+
+	if resource, ok := resourceOwner.getResource(resourceId); ok {
+		resourceNode := TfNode{Object: resource.Config, Range: resource.DeclRange}
+		if node, err := resourceNode.GetDescendant(attributePath); err == nil {
+			return &Location{
+				Path: node.Range.Filename,
+				Line: node.Range.Start.Line,
+				Col:  node.Range.Start.Column,
+			}, nil
+		}
+	}
+
 	return nil, nil
 }
 
